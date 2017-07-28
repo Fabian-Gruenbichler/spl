@@ -49,9 +49,12 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_USLEEP_RANGE
 	SPL_AC_KMEM_CACHE_ALLOCFLAGS
 	SPL_AC_WAIT_ON_BIT
-	SPL_AC_INODE_LOCK
 	SPL_AC_MUTEX_OWNER
+	SPL_AC_INODE_LOCK
 	SPL_AC_GROUP_INFO_GID
+	SPL_AC_KMEM_CACHE_CREATE_USERCOPY
+	SPL_AC_WAIT_QUEUE_ENTRY_T
+	SPL_AC_WAIT_QUEUE_HEAD_ENTRY
 ])
 
 AC_DEFUN([SPL_AC_MODULE_SYMVERS], [
@@ -112,6 +115,7 @@ AC_DEFUN([SPL_AC_KERNEL], [
 		if test "$kernelsrc" = "NONE"; then
 			kernsrcver=NONE
 		fi
+		withlinux=yes
 	fi
 
 	AC_MSG_RESULT([$kernelsrc])
@@ -124,7 +128,7 @@ AC_DEFUN([SPL_AC_KERNEL], [
 
 	AC_MSG_CHECKING([kernel build directory])
 	if test -z "$kernelbuild"; then
-		if test -e "/lib/modules/$(uname -r)/build"; then
+		if test x$withlinux != xyes -a -e "/lib/modules/$(uname -r)/build"; then
 			kernelbuild=`readlink -f /lib/modules/$(uname -r)/build`
 		elif test -d ${kernelsrc}-obj/${target_cpu}/${target_cpu}; then
 			kernelbuild=${kernelsrc}-obj/${target_cpu}/${target_cpu}
@@ -1559,30 +1563,6 @@ AC_DEFUN([SPL_AC_WAIT_ON_BIT], [
 ])
 
 dnl #
-dnl # 4.7 API change
-dnl # i_mutex is changed to i_rwsem. Instead of directly using
-dnl # i_mutex/i_rwsem, we should use inode_lock() and inode_lock_shared()
-dnl # We test inode_lock_shared because inode_lock is introduced earlier.
-dnl #
-AC_DEFUN([SPL_AC_INODE_LOCK], [
-	AC_MSG_CHECKING([whether inode_lock_shared() exists])
-	tmp_flags="$EXTRA_KCFLAGS"
-	EXTRA_KCFLAGS="-Werror"
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/fs.h>
-	],[
-		struct inode *inode = NULL;
-		inode_lock_shared(inode);
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_INODE_LOCK_SHARED, 1, [yes])
-	],[
-		AC_MSG_RESULT(no)
-	])
-	EXTRA_KCFLAGS="$tmp_flags"
-])
-
-dnl #
 dnl # Check whether mutex has owner with task_struct type.
 dnl #
 dnl # Note that before Linux 3.0, mutex owner is of type thread_info.
@@ -1612,6 +1592,30 @@ AC_DEFUN([SPL_AC_MUTEX_OWNER], [
 ])
 
 dnl #
+dnl # 4.7 API change
+dnl # i_mutex is changed to i_rwsem. Instead of directly using
+dnl # i_mutex/i_rwsem, we should use inode_lock() and inode_lock_shared()
+dnl # We test inode_lock_shared because inode_lock is introduced earlier.
+dnl #
+AC_DEFUN([SPL_AC_INODE_LOCK], [
+	AC_MSG_CHECKING([whether inode_lock_shared() exists])
+	tmp_flags="$EXTRA_KCFLAGS"
+	EXTRA_KCFLAGS="-Werror"
+	SPL_LINUX_TRY_COMPILE([
+		#include <linux/fs.h>
+	],[
+		struct inode *inode = NULL;
+		inode_lock_shared(inode);
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_INODE_LOCK_SHARED, 1, [yes])
+	],[
+		AC_MSG_RESULT(no)
+	])
+	EXTRA_KCFLAGS="$tmp_flags"
+])
+
+dnl #
 dnl # 4.9 API change
 dnl # group_info changed from 2d array via >blocks to 1d array via ->gid
 dnl #
@@ -1631,4 +1635,93 @@ AC_DEFUN([SPL_AC_GROUP_INFO_GID], [
 		AC_MSG_RESULT(no)
 	])
 	EXTRA_KCFLAGS="$tmp_flags"
+])
+
+dnl #
+dnl # grsecurity API change,
+dnl # kmem_cache_create() with SLAB_USERCOPY flag replaced by
+dnl # kmem_cache_create_usercopy().
+dnl #
+AC_DEFUN([SPL_AC_KMEM_CACHE_CREATE_USERCOPY], [
+	AC_MSG_CHECKING([whether kmem_cache_create_usercopy() exists])
+	tmp_flags="$EXTRA_KCFLAGS"
+	EXTRA_KCFLAGS="-Werror"
+	SPL_LINUX_TRY_COMPILE([
+		#include <linux/slab.h>
+		static void ctor(void *foo)
+		{
+			// fake ctor
+		}
+	],[
+		struct kmem_cache *skc_linux_cache;
+		const char *name = "test";
+		size_t size = 4096;
+		size_t align = 8;
+		unsigned long flags = 0;
+		size_t useroffset = 0;
+		size_t usersize = size - useroffset;
+
+		skc_linux_cache = kmem_cache_create_usercopy(
+			name, size, align, flags, useroffset, usersize, ctor);
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_KMEM_CACHE_CREATE_USERCOPY, 1,
+				[kmem_cache_create_usercopy() exists])
+	],[
+		AC_MSG_RESULT(no)
+	])
+	EXTRA_KCFLAGS="$tmp_flags"
+])
+
+dnl #
+dnl # 4.13 API change
+dnl # Renamed struct wait_queue -> struct wait_queue_entry.
+dnl #
+AC_DEFUN([SPL_AC_WAIT_QUEUE_ENTRY_T], [
+	AC_MSG_CHECKING([whether wait_queue_entry_t exists])
+	SPL_LINUX_TRY_COMPILE([
+		#include <linux/wait.h>
+	],[
+		wait_queue_entry_t *entry __attribute__ ((unused));
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_WAIT_QUEUE_ENTRY_T, 1,
+		    [wait_queue_entry_t exists])
+	],[
+		AC_MSG_RESULT(no)
+	])
+])
+
+dnl #
+dnl # 4.13 API change
+dnl # Renamed wait_queue_head::task_list -> wait_queue_head::head
+dnl # Renamed wait_queue_entry::task_list -> wait_queue_entry::entry
+dnl #
+AC_DEFUN([SPL_AC_WAIT_QUEUE_HEAD_ENTRY], [
+	AC_MSG_CHECKING([whether wq_head->head and wq_entry->entry exist])
+	SPL_LINUX_TRY_COMPILE([
+		#include <linux/wait.h>
+
+		#ifdef HAVE_WAIT_QUEUE_ENTRY_T
+		typedef wait_queue_head_t	spl_wait_queue_head_t;
+		typedef wait_queue_entry_t	spl_wait_queue_entry_t;
+		#else
+		typedef wait_queue_head_t	spl_wait_queue_head_t;
+		typedef wait_queue_t		spl_wait_queue_entry_t;
+		#endif
+	],[
+		spl_wait_queue_head_t wq_head;
+		spl_wait_queue_entry_t wq_entry;
+		struct list_head *head __attribute__ ((unused));
+		struct list_head *entry __attribute__ ((unused));
+
+		head = &wq_head.head;
+		entry = &wq_entry.entry;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_WAIT_QUEUE_HEAD_ENTRY, 1,
+		    [wq_head->head and wq_entry->entry exist])
+	],[
+		AC_MSG_RESULT(no)
+	])
 ])

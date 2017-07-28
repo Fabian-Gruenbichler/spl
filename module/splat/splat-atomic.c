@@ -28,6 +28,7 @@
 #include <sys/thread.h>
 #include <sys/mutex.h>
 #include <linux/mm_compat.h>
+#include <linux/wait_compat.h>
 #include <linux/slab.h>
 #include "splat-internal.h"
 
@@ -55,7 +56,7 @@ typedef struct atomic_priv {
         unsigned long ap_magic;
         struct file *ap_file;
 	kmutex_t ap_lock;
-        wait_queue_head_t ap_waitq;
+        spl_wait_queue_head_t ap_waitq;
 	volatile uint64_t ap_atomic;
 	volatile uint64_t ap_atomic_exited;
 	atomic_op_t ap_op;
@@ -211,7 +212,7 @@ splat_atomic_init(void)
         spin_lock_init(&sub->test_lock);
         sub->desc.id = SPLAT_SUBSYSTEM_ATOMIC;
 
-        SPLAT_TEST_INIT(sub, SPLAT_ATOMIC_TEST1_NAME, SPLAT_ATOMIC_TEST1_DESC,
+        splat_test_init(sub, SPLAT_ATOMIC_TEST1_NAME, SPLAT_ATOMIC_TEST1_DESC,
                       SPLAT_ATOMIC_TEST1_ID, splat_atomic_test1);
 
         return sub;
@@ -221,7 +222,7 @@ void
 splat_atomic_fini(splat_subsystem_t *sub)
 {
         ASSERT(sub);
-        SPLAT_TEST_FINI(sub, SPLAT_ATOMIC_TEST1_ID);
+        splat_test_fini(sub, SPLAT_ATOMIC_TEST1_ID);
 
         kfree(sub);
 }

@@ -26,7 +26,7 @@
 #define	_SPL_CONDVAR_H
 
 #include <linux/module.h>
-#include <linux/wait.h>
+#include <linux/wait_compat.h>
 #include <linux/delay_compat.h>
 #include <sys/kmem.h>
 #include <sys/mutex.h>
@@ -41,8 +41,8 @@
 
 typedef struct {
 	int cv_magic;
-	wait_queue_head_t cv_event;
-	wait_queue_head_t cv_destroy;
+	spl_wait_queue_head_t cv_event;
+	spl_wait_queue_head_t cv_destroy;
 	atomic_t cv_refs;
 	atomic_t cv_waiters;
 	kmutex_t *cv_mutex;
@@ -58,6 +58,8 @@ extern void __cv_wait_sig(kcondvar_t *, kmutex_t *);
 extern clock_t __cv_timedwait(kcondvar_t *, kmutex_t *, clock_t);
 extern clock_t __cv_timedwait_sig(kcondvar_t *, kmutex_t *, clock_t);
 extern clock_t cv_timedwait_hires(kcondvar_t *, kmutex_t *, hrtime_t,
+    hrtime_t res, int flag);
+extern clock_t cv_timedwait_sig_hires(kcondvar_t *, kmutex_t *, hrtime_t,
     hrtime_t res, int flag);
 extern void __cv_signal(kcondvar_t *);
 extern void __cv_broadcast(kcondvar_t *c);
